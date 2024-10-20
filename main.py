@@ -14,44 +14,55 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 def main():
     logging.info("Ana program başlatılıyor.")
 
-    # Veri yükleme
-    df = pd.read_csv("historical_data.csv", index_col=0, parse_dates=True)
-    logging.info(f"Veri yüklendi. Şekil: {df.shape}")
+    # Binance API'den veri çekmek için gerekli fonksiyonları içe aktar
+    from data import initialize_binance, fetch_data
 
-    # Indikatörlerin hesaplanması
+    # Binance API istemcisini başlat
+    client = initialize_binance()
+
+    # Binance'ten veri çekme
+    df = fetch_data(client, symbol='BTCUSDT', interval='1m', days=30)
+
+    # Verileri sayısal formata çevir
+    df['close'] = pd.to_numeric(df['close'], errors='coerce')
+
+    # İndikatörlerin hesaplanması
     indicators = Indicators()
-    df = indicators.calculate_indicators(df)
-    df = indicators.detect_candlestick_patterns(df)
-    df = indicators.calculate_fibonacci_levels(df)
+    df = indicators.calculate_indicators(df)  # Teknik göstergelerin hesaplanması
+    df = indicators.detect_candlestick_patterns(df)  # Mum formasyonlarının tespiti
+    df = indicators.calculate_fibonacci_levels(df)  # Fibonacci seviyelerinin hesaplanması
     logging.info("Tüm indikatörler hesaplandı.")
 
     # Gelişmiş indikatörlerin hesaplanması
     advanced_ind = AdvancedIndicators()
-    df = advanced_ind.calculate_advanced_indicators(df)
-    df = advanced_ind.calculate_market_regime(df)
-    df = advanced_ind.calculate_support_resistance(df)
+    df = advanced_ind.calculate_advanced_indicators(df)  # Gelişmiş indikatörlerin hesaplanması
+    df = advanced_ind.calculate_market_regime(df)  # Piyasa rejiminin hesaplanması
+    df = advanced_ind.calculate_support_resistance(df)  # Destek ve direnç seviyelerinin hesaplanması
     logging.info("Gelişmiş indikatörler hesaplandı.")
 
-    # Feature engineering
+    # Özellik mühendisliği
     fe = FeatureEngineer()
-    df = fe.engineer_features(df)
+    df = fe.engineer_features(df)  # Özellik mühendisliği işlemleri
     logging.info("Özellik mühendisliği tamamlandı.")
 
     # Model seçimi ve eğitimi
-    ms = ModelSelector(df)
-    model, scaler = ms.select_and_train_model()
+    y = df['close']  # Hedef değişken (tahmin edilmek istenen)
+    X = df.drop(columns=['close'])  # Özellikler (hedef değişkeni çıkar)
+
+    ms = ModelSelector(X, y)  # ModelSelector sınıfını başlat
+    best_model = ms.select_best_model()  # En iyi modeli seç
     logging.info("Model seçildi ve eğitildi.")
 
     # Risk yönetimi
-    rm = RiskManager(initial_balance=10000)
+    rm = RiskManager(initial_balance=10000)  # İlk bakiye ile RiskManager başlat
 
     # Strateji oluşturma
-    strategy = TradingStrategy(model, scaler)
+    strategy = TradingStrategy(best_model)  # Ticaret stratejisini oluştur
 
     # Backtesting
-    backtester = Backtester(df, model, scaler, initial_balance=10000)
-    results = backtester.run()
-    metrics = backtester.calculate_metrics()
+    backtester = Backtester(df, best_model, rm)  # Backtester'ı başlat
+    results = backtester.run()  # Backtesting işlemini başlat
+    metrics = backtester.calculate_metrics()  # Performans metriklerini hesapla
 
     logging.info("Backtesting tamamlandı.")
     logging.info("Performans metrikleri:")
@@ -59,14 +70,14 @@ def main():
         logging.info(f"{key}: {value}")
 
     # Sonuçların görselleştirilmesi
-    backtester.plot_results()
+    backtester.plot_results()  # Sonuçları görselleştir
 
     # Parametre optimizasyonu
     param_grid = {
-        'lookback': [30, 60, 90],
-        'threshold': [0.5, 0.6, 0.7]
+        'lookback': [30, 60, 90],  # Bakış aralıkları
+        'threshold': [0.5, 0.6, 0.7]  # Eşik değerleri
     }
-    best_params = backtester.optimize_parameters(param_grid)
+    best_params = backtester.optimize_parameters(param_grid)  # Parametreleri optimize et
     logging.info(f"En iyi parametreler: {best_params}")
 
     logging.info("Ana program tamamlandı.")
