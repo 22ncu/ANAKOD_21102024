@@ -1,66 +1,132 @@
-# Let's refactor the current code to define a FeatureEngineer class and move the feature engineering logic inside it.
-
 import pandas as pd
 import numpy as np
-from scipy.stats import linregress
+from ta.trend import MACD, SMAIndicator, EMAIndicator, IchimokuIndicator, ADXIndicator
+from ta.momentum import RSIIndicator, StochasticOscillator, ROCIndicator
+from ta.volatility import BollingerBands, AverageTrueRange
+from ta.volume import OnBalanceVolumeIndicator, ChaikinMoneyFlowIndicator
+import logging
 
-class FeatureEngineer:
+class Indicators:
     def __init__(self):
-        pass
-    
-    def engineer_features(self, df):
-        # Fiyat değişim oranları
-        df['price_change'] = df['close'].pct_change()
-        df['price_change_1d'] = df['close'].pct_change(periods=1)
-        df['price_change_5d'] = df['close'].pct_change(periods=5)
-        df['price_change_20d'] = df['close'].pct_change(periods=20)
+        logging.info("Indicators sınıfı başlatıldı.")
 
-        # Volatilite özellikleri
-        df['volatility_1d'] = df['close'].rolling(window=1).std()
-        df['volatility_5d'] = df['close'].rolling(window=5).std()
-        df['volatility_20d'] = df['close'].rolling(window=20).std()
+    def calculate_indicators(self, df):
+        logging.info("Teknik göstergelerin hesaplanması başlatılıyor.")
+        try:
+            # Sütunları sayısal formata çevirme (high, low, close, volume sütunları)
+            df['high'] = pd.to_numeric(df['high'], errors='coerce')
+            df['low'] = pd.to_numeric(df['low'], errors='coerce')
+            df['close'] = pd.to_numeric(df['close'], errors='coerce')
+            df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
 
-        # Trend özellikleri
-        df['trend_1d'] = df['close'] - df['close'].shift(1)
-        df['trend_5d'] = df['close'] - df['close'].shift(5)
-        df['trend_20d'] = df['close'] - df['close'].shift(20)
+            # Hatalı veri olup olmadığını kontrol etme
+            if df[['high', 'low', 'close', 'volume']].isnull().any().any():
+                logging.warning("Veri setinde hatalı veya eksik değerler bulundu. Bu değerler işleme alınmadan geçilecek.")
+                df.dropna(subset=['high', 'low', 'close', 'volume'], inplace=True)  # NaN içeren satırları kaldır
 
-        # Gösterge çapraz kesişimleri
-        df['sma_cross'] = np.where(df['sma_30'] > df['ema_30'], 1, 0)
-        df['macd_cross'] = np.where(df['macd'] > df['macd_signal'], 1, 0)
+            # Bollinger Bands hesaplaması
+            indicator_bb = BollingerBands(close=df['close'], window=20, window_dev=2)
+            df['bb_mavg'] = indicator_bb.bollinger_mavg()
+            df['bb_high'] = indicator_bb.bollinger_hband()
+            df['bb_low'] = indicator_bb.bollinger_lband()
 
-        # RSI aşırı alım/satım bölgeleri
-        df['rsi_overbought'] = np.where(df['rsi'] > 70, 1, 0)
-        df['rsi_oversold'] = np.where(df['rsi'] < 30, 1, 0)
+            # MACD hesaplaması
+            indicator_macd = MACD(close=df['close'], window_slow=26, window_fast=12, window_sign=9)
+            df['macd'] = indicator_macd.macd()
+            df['macd_signal'] = indicator_macd.macd_signal()
+            df['macd_diff'] = indicator_macd.macd_diff()
 
-        # Bollinger Bands özellikleri
-        df['bb_width'] = (df['bb_high'] - df['bb_low']) / df['bb_mavg']
-        df['bb_position'] = (df['close'] - df['bb_low']) / (df['bb_high'] - df['bb_low'])
+            # RSI hesaplaması
+            indicator_rsi = RSIIndicator(close=df['close'], window=14)
+            df['rsi'] = indicator_rsi.rsi()
 
-        # Hacim bazlı özellikler
-        df['volume_change'] = df['volume'].pct_change()
-        df['volume_ma_ratio'] = df['volume'] / df['volume'].rolling(window=20).mean()
+            # ADX hesaplaması
+            indicator_adx = ADXIndicator(high=df['high'], low=df['low'], close=df['close'], window=14)
+            df['adx'] = indicator_adx.adx()
 
-        # Fiyat momentumu
-        df['momentum'] = df['close'] - df['close'].shift(5)
+            # ATR hesaplaması
+            indicator_atr = AverageTrueRange(high=df['high'], low=df['low'], close=df['close'], window=14)
+            df['atr'] = indicator_atr.average_true_range()
 
-        # Trend gücü
-        def trend_strength(prices, window=14):
-            slopes = [linregress(range(window), prices[i:i+window])[0] for i in range(len(prices)-window+1)]
-            return pd.Series(slopes, index=prices.index[window-1:])
-        
-        df['trend_strength'] = trend_strength(df['close'])
+            # Stochastic Oscillator hesaplaması
+            indicator_stochastic = StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
+            df['stoch_k'] = indicator_stochastic.stoch()
+            df['stoch_d'] = indicator_stochastic.stoch_signal()
 
-        # Fraktal Boyut İndeksi (Fractal Dimension Index)
-        def fdi(high, low, close, window=5):
-            hc = np.log(high) - np.log(close)
-            cl = np.log(close) - np.log(low)
-            hlc = np.log(high) - np.log(low)
+            # ROC (Rate of Change) hesaplaması
+            indicator_roc = ROCIndicator(close=df['close'], window=10)
+            df['roc'] = indicator_roc.roc()
+
+            # SMA (Basit Hareketli Ortalama) hesaplaması
+            indicator_sma = SMAIndicator(close=df['close'], window=30)
+            df['sma_30'] = indicator_sma.sma_indicator()
+
+            # EMA (Üssel Hareketli Ortalama) hesaplaması
+            indicator_ema = EMAIndicator(close=df['close'], window=30)
+            df['ema_30'] = indicator_ema.ema_indicator()
+
+            # Ichimoku Göstergesi hesaplaması
+            indicator_ichimoku = IchimokuIndicator(high=df['high'], low=df['low'], window1=9, window2=26, window3=52)
+            df['ichimoku_a'] = indicator_ichimoku.ichimoku_a()
+            df['ichimoku_b'] = indicator_ichimoku.ichimoku_b()
+
+            # On-Balance Volume (OBV) hesaplaması
+            indicator_obv = OnBalanceVolumeIndicator(close=df['close'], volume=df['volume'])
+            df['obv'] = indicator_obv.on_balance_volume()
+
+            # Chaikin Money Flow (CMF) hesaplaması
+            indicator_cmf = ChaikinMoneyFlowIndicator(high=df['high'], low=df['low'], close=df['close'], volume=df['volume'], window=20)
+            df['cmf'] = indicator_cmf.chaikin_money_flow()
+
+            # Basit momentum hesaplaması
+            df['momentum'] = df['close'].pct_change(periods=10)
+
+            logging.info("Teknik göstergeler başarıyla hesaplandı.")
+        except Exception as e:
+            logging.error(f"Göstergelerin hesaplanması sırasında hata: {e}")
+            raise
+
+        return df
+
+    def detect_candlestick_patterns(self, df):
+        logging.info("Mum formasyonlarının tespiti başlatılıyor.")
+        try:
+            # Mum formasyonlarının hesaplanması
+            df['body'] = df['close'] - df['open']
+            df['range'] = df['high'] - df['low']
+            df['upper_shadow'] = df['high'] - df[['close', 'open']].max(axis=1)
+            df['lower_shadow'] = df[['close', 'open']].min(axis=1) - df['low']
             
-            n1 = (np.log(hc.rolling(window).sum()) + np.log(cl.rolling(window).sum()) 
-                  - np.log(hlc.rolling(window).sum())) / np.log(2)
-            return (2 - n1) * 100
+            # Hammer formasyonu tespiti
+            df['hammer'] = np.where((df['lower_shadow'] > 2 * df['body'].abs()) & 
+                                    (df['upper_shadow'] < 0.1 * df['body'].abs()), 1, 0)
+            
+            # Doji formasyonu tespiti
+            df['doji'] = np.where(df['body'].abs() <= 0.1 * df['range'], 1, 0)
+            
+            logging.info("Mum formasyonları başarıyla tespit edildi.")
+        except Exception as e:
+            logging.error(f"Mum formasyonlarının tespiti sırasında hata: {e}")
+            raise
+        return df
 
-        df['fdi'] = fdi(df['high'], df['low'], df['close'])
-
+    def calculate_fibonacci_levels(self, df, period=50):
+        logging.info("Fibonacci seviyelerinin hesaplanması başlatılıyor.")
+        try:
+            recent_high = df['high'].rolling(window=period).max()
+            recent_low = df['low'].rolling(window=period).min()
+            
+            # Fibonacci seviyelerinin hesaplanması
+            df['fib_0'] = recent_high
+            df['fib_23.6'] = recent_high - 0.236 * (recent_high - recent_low)
+            df['fib_38.2'] = recent_high - 0.382 * (recent_high - recent_low)
+            df['fib_50'] = recent_high - 0.5 * (recent_high - recent_low)
+            df['fib_61.8'] = recent_high - 0.618 * (recent_high - recent_low)
+            df['fib_76.4'] = recent_high - 0.764 * (recent_high - recent_low)
+            df['fib_100'] = recent_low
+            
+            logging.info("Fibonacci seviyeleri başarıyla hesaplandı.")
+        except Exception as e:
+            logging.error(f"Fibonacci seviyelerinin hesaplanması sırasında hata: {e}")
+            raise
         return df
