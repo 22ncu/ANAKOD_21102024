@@ -55,5 +55,17 @@ def fetch_data(client, symbol='BTCUSDT', interval='1m', days=1):
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']]
     
+    # Sütunları sayısal formata çevirme
+    df['open'] = pd.to_numeric(df['open'], errors='coerce')
+    df['high'] = pd.to_numeric(df['high'], errors='coerce')
+    df['low'] = pd.to_numeric(df['low'], errors='coerce')
+    df['close'] = pd.to_numeric(df['close'], errors='coerce')
+    df['volume'] = pd.to_numeric(df['volume'], errors='coerce')
+
+    # NaN değerleri kontrol etme ve temizleme
+    if df.isnull().values.any():
+        logging.warning("Veri setinde NaN değerler mevcut. Bu değerler işleme alınmadan geçilecek.")
+        df.dropna(inplace=True)  # NaN içeren satırları kaldır
+
     logging.info(f"Veri başarıyla çekildi. Toplam veri noktası: {len(df)}")
     return df
