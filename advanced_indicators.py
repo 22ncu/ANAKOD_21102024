@@ -1,86 +1,95 @@
 import pandas as pd
+import numpy as np
+from ta.momentum import KAMAIndicator, TSIIndicator
+from ta.trend import CCIIndicator, DPOIndicator, VortexIndicator
+from ta.volatility import UlcerIndex
+from ta.volume import AccDistIndexIndicator, EaseOfMovementIndicator, ForceIndexIndicator
 import logging
-from indicators import Indicators
-from feature_engineering import FeatureEngineer
-from model_selection import ModelSelector
-from risk_management import RiskManager
-from strategy import TradingStrategy
-from advanced_indicators import AdvancedIndicators
-from backtester import Backtester
 
-# Logging konfigürasyonu
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+class AdvancedIndicators:
+    def __init__(self):
+        logging.info("AdvancedIndicators sınıfı başlatıldı.")
 
-def main():
-    logging.info("Ana program başlatılıyor.")
+    def calculate_advanced_indicators(self, df):
+        logging.info("Gelişmiş indikatörlerin hesaplanması başlatılıyor.")
+        try:
+            # KAMA (Kaufman's Adaptive Moving Average)
+            kama = KAMAIndicator(close=df['close'])
+            df['kama'] = kama.kama()
 
-    # Binance API'den veri çekmek için gerekli fonksiyonları içe aktar
-    from data import initialize_binance, fetch_data
+            # TSI (True Strength Index)
+            tsi = TSIIndicator(close=df['close'])
+            df['tsi'] = tsi.tsi()
 
-    # Binance API istemcisini başlat
-    client = initialize_binance()
+            # CCI (Commodity Channel Index)
+            cci = CCIIndicator(high=df['high'], low=df['low'], close=df['close'])
+            df['cci'] = cci.cci()
 
-    # Binance'ten veri çekme
-    df = fetch_data(client, symbol='BTCUSDT', interval='1m', days=30)
+            # DPO (Detrended Price Oscillator)
+            dpo = DPOIndicator(close=df['close'])
+            df['dpo'] = dpo.dpo()
 
-    # Verileri sayısal formata çevir
-    df['close'] = pd.to_numeric(df['close'], errors='coerce')
+            # Vortex Indicator
+            vortex = VortexIndicator(high=df['high'], low=df['low'], close=df['close'])
+            df['vortex_pos'] = vortex.vortex_indicator_pos()
+            df['vortex_neg'] = vortex.vortex_indicator_neg()
 
-    # İndikatörlerin hesaplanması
-    indicators = Indicators()
-    df = indicators.calculate_indicators(df)  # Teknik göstergelerin hesaplanması
-    df = indicators.detect_candlestick_patterns(df)  # Mum formasyonlarının tespiti
-    df = indicators.calculate_fibonacci_levels(df)  # Fibonacci seviyelerinin hesaplanması
-    logging.info("Tüm indikatörler hesaplandı.")
+            # Ulcer Index
+            ulcer = UlcerIndex(close=df['close'])
+            df['ulcer_index'] = ulcer.ulcer_index()
 
-    # Gelişmiş indikatörlerin hesaplanması
-    advanced_ind = AdvancedIndicators()
-    df = advanced_ind.calculate_advanced_indicators(df)  # Gelişmiş indikatörlerin hesaplanması
-    df = advanced_ind.calculate_market_regime(df)  # Piyasa rejiminin hesaplanması
-    df = advanced_ind.calculate_support_resistance(df)  # Destek ve direnç seviyelerinin hesaplanması
-    logging.info("Gelişmiş indikatörler hesaplandı.")
+            # Accumulation/Distribution Index
+            ad = AccDistIndexIndicator(high=df['high'], low=df['low'], close=df['close'], volume=df['volume'])
+            df['ad_index'] = ad.acc_dist_index()
 
-    # Özellik mühendisliği
-    fe = FeatureEngineer()
-    df = fe.engineer_features(df)  # Özellik mühendisliği işlemleri
-    logging.info("Özellik mühendisliği tamamlandı.")
+            # Ease of Movement
+            eom = EaseOfMovementIndicator(high=df['high'], low=df['low'], volume=df['volume'])
+            df['eom'] = eom.ease_of_movement()
 
-    # Model seçimi ve eğitimi
-    y = df['close']  # Hedef değişken (tahmin edilmek istenen)
-    X = df.drop(columns=['close'])  # Özellikler (hedef değişkeni çıkar)
+            # Force Index
+            fi = ForceIndexIndicator(close=df['close'], volume=df['volume'])
+            df['force_index'] = fi.force_index()
 
-    ms = ModelSelector(X, y)  # ModelSelector sınıfını başlat
-    best_model = ms.select_best_model()  # En iyi modeli seç
-    logging.info("Model seçildi ve eğitildi.")
+            logging.info("Gelişmiş indikatörler başarıyla hesaplandı.")
+        except Exception as e:
+            logging.error(f"Gelişmiş indikatörlerin hesaplanması sırasında hata: {e}")
+            raise
 
-    # Risk yönetimi
-    rm = RiskManager(initial_balance=10000)  # İlk bakiye ile RiskManager başlat
+        return df
 
-    # Strateji oluşturma
-    strategy = TradingStrategy(best_model)  # Ticaret stratejisini oluştur
+    def calculate_market_regime(self, df, window=20):
+        logging.info("Piyasa rejimi hesaplanıyor.")
+        try:
+            # Trend gücü
+            df['trend_strength'] = df['close'].pct_change(window).abs()
 
-    # Backtesting
-    backtester = Backtester(df, best_model, rm)  # Backtester'ı başlat
-    results = backtester.run()  # Backtesting işlemini başlat
-    metrics = backtester.calculate_metrics()  # Performans metriklerini hesapla
+            # Volatilite
+            df['volatility'] = df['close'].rolling(window=window).std()
 
-    logging.info("Backtesting tamamlandı.")
-    logging.info("Performans metrikleri:")
-    for key, value in metrics.items():
-        logging.info(f"{key}: {value}")
+            # Momentum
+            df['momentum'] = df['close'].pct_change(window)
 
-    # Sonuçların görselleştirilmesi
-    backtester.plot_results()  # Sonuçları görselleştir
+            # Piyasa rejimi belirleme
+            df['market_regime'] = np.where(df['trend_strength'] > df['trend_strength'].median(),
+                                           np.where(df['momentum'] > 0, 'Bullish Trend', 'Bearish Trend'),
+                                           np.where(df['volatility'] > df['volatility'].median(), 'High Volatility', 'Range Bound'))
 
-    # Parametre optimizasyonu
-    param_grid = {
-        'lookback': [30, 60, 90],  # Bakış aralıkları
-        'threshold': [0.5, 0.6, 0.7]  # Eşik değerleri
-    }
-    best_params = backtester.optimize_parameters(param_grid)  # Parametreleri optimize et
-    logging.info(f"En iyi parametreler: {best_params}")
+            logging.info("Piyasa rejimi başarıyla hesaplandı.")
+        except Exception as e:
+            logging.error(f"Piyasa rejimi hesaplanması sırasında hata: {e}")
+            raise
 
-    logging.info("Ana program tamamlandı.")
+        return df
 
-if __name__ == "__main__":
-    main()
+    def calculate_support_resistance(self, df, window=20):
+        logging.info("Destek ve direnç seviyeleri hesaplanıyor.")
+        try:
+            df['support'] = df['low'].rolling(window=window).min()
+            df['resistance'] = df['high'].rolling(window=window).max()
+
+            logging.info("Destek ve direnç seviyeleri başarıyla hesaplandı.")
+        except Exception as e:
+            logging.error(f"Destek ve direnç seviyelerinin hesaplanması sırasında hata: {e}")
+            raise
+
+        return df
